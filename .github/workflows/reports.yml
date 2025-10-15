@@ -1,85 +1,72 @@
-name: Security and Docker Reports
+name: Security and Lint Reports
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
 
 jobs:
-  build-and-scan:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout the repo
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    # 1️⃣ Checkout the repository
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      # 2️⃣ Pull latest changes
-      - name: Pull latest changes
-        run: git pull origin main
+    # 2️⃣ Set up Python environment
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
 
-      # 3️⃣ Set up Python
-      - name: Set up Python 3.14
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.14
+    # 3️⃣ Install dependencies
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 bandit
 
-      # 4️⃣ Install dependencies
-      - name: Install Python dependencies
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip
-          pip install bandit pytest flake8
+    # 4️⃣ Lint the code
+    - name: Run flake8
+      run: |
+        flake8 . --max-line-length=120
 
-      # 5️⃣ Run linting
-      - name: Run flake8 linting
-        run: |
-          source venv/bin/activate
-          flake8 my_random.py --max-line-length=120
+    # 5️⃣ Run Bandit security scan
+    - name: Run Bandit
+      run: |
+        mkdir -p reports/bandit_reports
+        DATETIME=$(date +'%Y%m%d_%H%M%S')
+        bandit -r . -f json -o reports/bandit_reports/bandit_report_$DATETIME.json
 
-      # 6️⃣ Run Trivy filesystem scan
-      - name: Trivy FS Scan
-        uses: aquasec/trivy-action@v2
-        with:
-          scan-type: fs
-          format: json
-          output: reports/trivy_reports/trivy_fs_report_$(date +%Y%m%d_%H%M%S).json
-          directory: .
+    # 6️⃣ Install Trivy CLI
+    - name: Install Trivy CLI
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh
 
-      # 7️⃣ Run unit tests
-      - name: Run unit tests
-        run: |
-          source venv/bin/activate
-          python -m unittest discover
+    # 7️⃣ Run Trivy filesystem scan
+    - name: Trivy FS scan
+      run: |
+        mkdir -p reports/trivy_reports
+        DATETIME=$(date +'%Y%m%d_%H%M%S')
+        ./trivy fs . --format json --output reports/trivy_reports/trivy_fs_report_$DATETIME.json || true
 
-      # 8️⃣ Run Bandit security scan
-      - name: Run Bandit
-        run: |
-          mkdir -p reports/bandit_reports
-          source venv/bin/activate
-          bandit -r . -f json -o reports/bandit_reports/bandit_report_$(date +%Y%m%d_%H%M%S).json
+    # 8️⃣ Build Docker image
+    - name: Build Docker image
+      run: |
+        docker build -t my_random_app .
 
-      # 9️⃣ Build Docker image
-      - name: Build Docker image
-        run: docker build -t my_random_app .
+    # 9️⃣ Run Trivy Docker image scan
+    - name: Trivy Docker image scan
+      run: |
+        DATETIME=$(date +'%Y%m%d_%H%M%S')
+        ./trivy image --format json --output reports/trivy_reports/trivy_image_report_$DATETIME.json my_random_app || true
 
-      # 🔟 Scan Docker image with Trivy
-      - name: Trivy Image Scan
-        uses: aquasec/trivy-action@v2
-        with:
-          image-ref: my_random_app:latest
-          format: json
-          output: reports/trivy_reports/trivy_image_report_$(date +%Y%m%d_%H%M%S).json
-
-      # 1️⃣1️⃣ Commit and push updated reports
-      - name: Commit and push reports
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          git add reports/
-          git commit -m "Update security reports [skip ci]" || echo "No changes to commit"
-          git push origin main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #  🔟 Upload reports as artifacts (optional)
+    - name: Upload reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          reports/bandit_reports/*.json
+          reports/trivy_reports/*.json
