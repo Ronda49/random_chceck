@@ -15,41 +15,45 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2️⃣ Lint / Code analysis (example using Bandit for Python)
-      - name: Run Bandit security scan
-        uses: python-actions/setup-python@v1
+      # 2️⃣ Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.x'
+
+      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install bandit
+
+      # 4️⃣ Run Bandit security scan
       - name: Run Bandit
         run: bandit -r .
 
-      # 3️⃣ Trivy FS scan
+      # 5️⃣ Trivy filesystem scan
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@v0.34.0
+        uses: aquasecurity/trivy-action@0.31.0
         with:
           scan-type: fs
           format: json
           output: trivy_fs_report.json
 
-      # 4️⃣ Build Docker image
+      # 6️⃣ Build Docker image
       - name: Build Docker image
         run: |
           docker build -t my-app:latest .
 
-      # 5️⃣ Trivy image scan
+      # 7️⃣ Trivy Docker image scan
       - name: Trivy Docker image scan
-        uses: aquasecurity/trivy-action@v0.34.0
+        uses: aquasecurity/trivy-action@0.31.0
         with:
           scan-type: image
           image-ref: my-app:latest
           format: json
           output: trivy_image_report.json
 
-      # 6️⃣ Upload scan reports (optional)
+      # 8️⃣ Upload scan reports (optional)
       - name: Show FS scan report
         run: cat trivy_fs_report.json
       - name: Show image scan report
