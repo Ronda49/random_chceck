@@ -1,0 +1,85 @@
+name: Security and Docker Reports
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout the repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2️⃣ Pull latest changes
+      - name: Pull latest changes
+        run: git pull origin main
+
+      # 3️⃣ Set up Python
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.14
+
+      # 4️⃣ Install dependencies
+      - name: Install Python dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install bandit pytest flake8
+
+      # 5️⃣ Run linting
+      - name: Run flake8 linting
+        run: |
+          source venv/bin/activate
+          flake8 my_random.py --max-line-length=120
+
+      # 6️⃣ Run Trivy filesystem scan
+      - name: Trivy FS Scan
+        uses: aquasec/trivy-action@v2
+        with:
+          scan-type: fs
+          format: json
+          output: reports/trivy_reports/trivy_fs_report_$(date +%Y%m%d_%H%M%S).json
+          directory: .
+
+      # 7️⃣ Run unit tests
+      - name: Run unit tests
+        run: |
+          source venv/bin/activate
+          python -m unittest discover
+
+      # 8️⃣ Run Bandit security scan
+      - name: Run Bandit
+        run: |
+          mkdir -p reports/bandit_reports
+          source venv/bin/activate
+          bandit -r . -f json -o reports/bandit_reports/bandit_report_$(date +%Y%m%d_%H%M%S).json
+
+      # 9️⃣ Build Docker image
+      - name: Build Docker image
+        run: docker build -t my_random_app .
+
+      # 🔟 Scan Docker image with Trivy
+      - name: Trivy Image Scan
+        uses: aquasec/trivy-action@v2
+        with:
+          image-ref: my_random_app:latest
+          format: json
+          output: reports/trivy_reports/trivy_image_report_$(date +%Y%m%d_%H%M%S).json
+
+      # 1️⃣1️⃣ Commit and push updated reports
+      - name: Commit and push reports
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add reports/
+          git commit -m "Update security reports [skip ci]" || echo "No changes to commit"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
