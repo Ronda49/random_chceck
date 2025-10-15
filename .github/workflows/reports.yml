@@ -1,71 +1,63 @@
-name: Security & Docker Reports
+name: Security & Reports Pipeline
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  security-and-docker:
+  lint_bandit_trivy:
     runs-on: ubuntu-latest
-
     steps:
-    # 1️⃣ Checkout repo
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    # 2️⃣ Set up Python
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-    # 3️⃣ Install dependencies
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install flake8 bandit
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 bandit
 
-    # 4️⃣ Run Flake8 linting
-    - name: Run Flake8
-      run: flake8 . --max-line-length=120
+      - name: Lint code with flake8
+        run: flake8 . --max-line-length=120
 
-    # 5️⃣ Run Bandit security scan
-    - name: Run Bandit
-      run: |
-        mkdir -p reports/bandit_reports
-        bandit -r . -f json -o reports/bandit_reports/bandit_report_$(date +'%Y%m%d_%H%M%S').json
+      - name: Run Bandit security scan
+        run: |
+          mkdir -p reports/bandit_reports
+          datetime=$(date +"%Y%m%d_%H%M%S")
+          bandit -r . -f json -o reports/bandit_reports/bandit_report_$datetime.json
 
-    # 6️⃣ Install Trivy
-    - name: Install Trivy
-      uses: aquasecurity/trivy-action@v0.16.0
+      - name: Run Trivy FS scan
+        uses: aquasecurity/trivy-action@v0.33.1
+        with:
+          scan-type: fs
+          format: json
+          output: reports/trivy_reports/trivy_fs_report_$(date +%Y%m%d_%H%M%S).json
 
-    # 7️⃣ Run Trivy filesystem scan
-    - name: Trivy FS Scan
-      run: |
-        mkdir -p reports/trivy_reports
-        trivy fs . --format json --output reports/trivy_reports/trivy_fs_report_$(date +'%Y%m%d_%H%M%S').json
+  docker_trivy_scan:
+    runs-on: ubuntu-latest
+    needs: lint_bandit_trivy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    # 8️⃣ Build Docker image
-    - name: Build Docker image
-      run: docker build -t my_random_app .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-    # 9️⃣ Run Trivy image scan
-    - name: Trivy Docker Image Scan
-      run: |
-        trivy image --format json --output reports/trivy_reports/trivy_image_report_$(date +'%Y%m%d_%H%M%S').json my_random_app:latest
+      - name: Build Docker image
+        run: docker build -t my_random_app .
 
-    # 🔟 Upload Bandit reports
-    - name: Upload Bandit reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: bandit-reports
-        path: reports/bandit_reports/
-
-    # 1️⃣1️⃣ Upload Trivy reports
-    - name: Upload Trivy reports
-      uses: actions/upload-artifact@v4
-      with:
-        name: trivy-reports
-        path: reports/trivy_reports/
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@v0.33.1
+        with:
+          scan-type: image
+          image-ref: my_random_app:latest
+          format: json
+          output: reports/trivy_reports/trivy_image_report_$(date +%Y%m%d_%H%M%S).json
